@@ -179,8 +179,6 @@
         headers: {
           Range: `bytes=${_next_offset}-`,
         },
-        "User-Agent":
-          "User-Agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/117.0",
       })
         .then((res) => {
           if (![200, 206].includes(res.status)) {
@@ -303,7 +301,7 @@
             .createWritable()
             .then((writable) => {
               fetchNextPart(writable);
-              createProgressBar(videoId);
+              createProgressBar(videoId, fileName);
             })
             .catch((err) => {
               console.error(err.name, err.message);
@@ -316,7 +314,7 @@
         });
     } else {
       fetchNextPart(null);
-      createProgressBar(videoId);
+      createProgressBar(videoId, fileName);
     }
   };
 
@@ -351,36 +349,34 @@
             throw "Get non audio response with MIME type " + mime;
           }
 
-          try {
-            const match = res.headers
-              .get("Content-Range")
-              .match(contentRangeRegex);
+          const match = res.headers
+            .get("Content-Range")
+            .match(contentRangeRegex);
 
-            const startOffset = parseInt(match[1]);
-            const endOffset = parseInt(match[2]);
-            const totalSize = parseInt(match[3]);
+          const startOffset = parseInt(match[1]);
+          const endOffset = parseInt(match[2]);
+          const totalSize = parseInt(match[3]);
 
-            if (startOffset !== _next_offset) {
-              logger.error("Gap detected between responses.");
-              logger.info("Last offset: " + _next_offset);
-              logger.info("New start offset " + match[1]);
-              throw "Gap detected between responses.";
-            }
-            if (_total_size && totalSize !== _total_size) {
-              logger.error("Total size differs");
-              throw "Total size differs";
-            }
-
-            _next_offset = endOffset + 1;
-            _total_size = totalSize;
-          } finally {
-            logger.info(
-              `Get response: ${res.headers.get(
-                "Content-Length"
-              )} bytes data from ${res.headers.get("Content-Range")}`
-            );
-            return res.blob();
+          if (startOffset !== _next_offset) {
+            logger.error("Gap detected between responses.");
+            logger.info("Last offset: " + _next_offset);
+            logger.info("New start offset " + match[1]);
+            throw "Gap detected between responses.";
           }
+          if (_total_size && totalSize !== _total_size) {
+            logger.error("Total size differs");
+            throw "Total size differs";
+          }
+
+          _next_offset = endOffset + 1;
+          _total_size = totalSize;
+
+          logger.info(
+            `Get response: ${res.headers.get(
+              "Content-Length"
+            )} bytes data from ${res.headers.get("Content-Range")}`
+          );
+          return res.blob();
         })
         .then((resBlob) => {
           if (_writable !== null) {
@@ -390,6 +386,10 @@
           }
         })
         .then(() => {
+          if (!_total_size) {
+            throw new Error("_total_size is NULL");
+          }
+
           if (_next_offset < _total_size) {
             fetchNextPart(_writable);
           } else {
@@ -486,9 +486,9 @@
     // Stories
     const storiesContainer = document.getElementById("StoryViewer");
     if (storiesContainer) {
-      console.log("storiesContainer");
+      logger.info("storiesContainer");
       const createDownloadButton = () => {
-        console.log("createDownloadButton");
+        logger.info("createDownloadButton");
         const downloadIcon = document.createElement("i");
         downloadIcon.className = "icon icon-download";
         const downloadButton = document.createElement("button");
@@ -523,7 +523,7 @@
         storiesContainer.querySelector(".GrsJNw3y") ||
         storiesContainer.querySelector(".DropdownMenu").parentNode;
       if (storyHeader && !storyHeader.querySelector(".tel-download")) {
-        console.log("storyHeader");
+        logger.info("storyHeader");
         storyHeader.insertBefore(
           createDownloadButton(),
           storyHeader.querySelector("button")
@@ -663,6 +663,8 @@
         downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid &&
         audioElement.getAttribute("data-mid") === dataMid
       ) {
+        const link = audioElement.audio && audioElement.audio.getAttribute("src");
+        const isAudio = audioElement.audio && audioElement.audio instanceof HTMLAudioElement;
         downloadButtonPinnedAudio.onclick = (e) => {
           e.stopPropagation();
           if (isAudio) {
@@ -672,8 +674,6 @@
           }
         };
         downloadButtonPinnedAudio.setAttribute("data-mid", dataMid);
-        const link = audioElement.audio && audioElement.audio.getAttribute("src");
-        const isAudio = audioElement.audio && audioElement.audio instanceof HTMLAudioElement
         if (link) {
           pinnedAudio
             .querySelector(".pinned-container-wrapper-utils")
@@ -785,7 +785,7 @@
       }
     } else if (
       mediaAspecter.querySelector("video") &&
-      mediaAspecter.querySelector("video") &&
+      mediaAspecter.querySelector("video").src &&
       !mediaButtons.querySelector("button.btn-icon.tgico-download")
     ) {
       // 2. Video HTML element detected, could be either GIF or unloaded video
